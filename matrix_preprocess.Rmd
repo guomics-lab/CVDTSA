@@ -1,0 +1,77 @@
+
+
+```{r}
+rm(list = ls())
+library(readr)
+library(plyr)
+library(readxl)
+library(stringr)
+library(magrittr)
+source("D:/datamining_library_ge20200306.R")
+
+file <- list.files("./","^b.*.txt")
+n=1
+list <- list()
+for (i in file) {
+  list[[n]] <- read.table(paste0("./", i),sep = "\t",header = T,stringsAsFactors = F)
+  n=n+1
+}
+
+df <- list[[1]]
+df.1 <- df[,grepl("Ratio...",names(df))] %>% as.data.frame()
+nm1 <- gsub("\\.","_",names(df.1))
+nm2 <- ge.split(nm1,"___",2)
+nm3 <- gsub("__","_",nm2)
+nm4 <- paste0(ge.split(file[1],"\\.",1),"_",nm3)
+names(df.1) <- nm4
+df.1$prot <- df$Accession
+
+df2 <- list[[2]]
+df2.1 <- df2[,grepl("Ratio...",names(df2))] %>% as.data.frame()
+nm1 <- gsub("\\.","_",names(df2.1))
+nm2 <- ge.split(nm1,"___",2)
+nm3 <- gsub("__","_",nm2)
+nm4 <- paste0(ge.split(file[2],"\\.",1),"_",nm3)
+names(df2.1) <- nm4
+df2.1$prot <- df2$Accession
+
+tmp <- merge(df.1,df2.1,by.y = c("prot"),all=T)
+
+for (ii in 3:length(file)) {
+  df <- list[[ii]]
+  df.1 <- df[,grepl("Ratio...",names(df))] %>% as.data.frame()
+  nm1 <- gsub("\\.","_",names(df.1))
+  nm2 <- ge.split(nm1,"___",2)
+  nm3 <- gsub("__","_",nm2)
+  nm4 <- paste0(ge.split(file[ii],"\\.",1),"_",nm3)
+  names(df.1) <- nm4
+  df.1$prot <- df$Accession
+  tmp <- merge(tmp,df.1,by.y = c("prot"),all=T)
+  }
+
+df3 <- tmp[,-1]
+row.names(df3) <- tmp$prot
+#ge.writetable(tmp,"covid_wz_merge20200413v2.txt",row.names = F)
+
+b13 <- list[[which(grepl("b13",file))]]
+df.b13 <- data.frame(prot=b13$Accession,F127C=b13$Abundances..Grouped...F1..127C, F126=b13$Abundances..Grouped...F1..126)
+df.b13$k <- df.b13$F127C/df.b13$F126
+
+df3$k <- df.b13$k[match(row.names(df3),df.b13$prot)]
+
+nm1 <- ge.split(names(df3),"_",1)
+nm2 <- which(nm1 %in% c("b14","b15","b16","b17"))
+
+df3[,nm2] <- df3[,nm2]*df3$k
+df3 <- df3[,-ncol(df3)]
+df3 <- df3[apply(df3,1, function(x){sum(!is.na(x))})>0,]
+
+ge.writetable(df3,"covid_wz_merge20200417_filename.txt")
+
+df4 <- df3[apply(df3,1, function(x){sum(is.na(x))/ncol(df3)})<0.8,]
+
+outline <- (fivenum(df4)[4]-fivenum(df4)[2])*2+fivenum(df4)[4]
+df4[df4>outline] <- outline
+ge.writetable(df4,"covid_wz_merge20200509_filename.txt")
+```
+

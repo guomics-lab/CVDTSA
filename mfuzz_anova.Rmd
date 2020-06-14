@@ -1,0 +1,467 @@
+
+```{r mfuzz_NA80}
+
+rm(list = ls())
+library(readr)
+library(plyr)
+library(readxl)
+library(stringr)
+library(magrittr)
+library(Mfuzz)
+source("datamining_library_ge20200306.R")
+
+info<-read_xlsx("batch_info20200417_1854.xlsx",sheet=1)
+
+protein<-read.table("../1_matrix_preprocess/covid_wz_merge20200509_filename.txt",sep = "\t",header = T,row.names = 1)
+protein[,1:ncol(protein)] <- as.numeric(as.matrix(protein))
+
+info2<-info[c(which(c(as.matrix(info$gourp)) %in% c("SC","LC"))),]
+
+info3<-info2[,c(3,5,10)]
+
+
+info4<-data.frame(unique(info3))
+
+
+protein2<-data.frame(t(protein))
+
+
+protein3<-data.frame(row.names(protein2),protein2)
+
+names(protein3)<-c("filename",c(as.matrix(names(protein3[,-1]))))
+
+
+protein4<-data.frame(merge(info4,protein3,by.x="filename"))
+
+
+protein4.1<-protein4[1:10,1:10]
+
+
+row.names(protein4)<-c(as.matrix(protein4$filename))
+
+protein5<-data.frame(t(protein4[,-c(1:3)]))
+
+
+col<-ncol(protein5)
+
+write.csv(protein5,"tem.csv",row.names = F)
+
+protein6<-apply(protein5,1, function(X) sum(protein5[X,1:col],na.rm=T))
+                
+
+protein7<-data.frame(protein6,protein5)
+
+protein8<-data.frame(protein7[-c(which(c(as.matrix(protein7$protein6))%in%c("0"))),-1])
+
+protein9<-data.frame((protein8))
+
+
+######### mfuzz
+ 
+ protein12<-data.frame(t(protein9))
+
+
+protein13<-data.frame(row.names(protein12),protein12)
+
+
+names(protein13)<-c("filename",c(as.matrix(names(protein13[,-1]))))
+
+
+protein14<-data.frame(merge(info4,protein13,by.x="filename"))
+
+
+  #### mfuzz SC
+
+
+SC<-data.frame(protein14[c(which(protein14$gourp=="SC")),-c(1,3)])
+
+
+
+
+
+SC1<-aggregate(SC[,colnames(SC)[2:ncol(SC)]],by=list(SC$time),mean,na.rm= TRUE)
+
+
+row.names(SC1)<-c(as.matrix(SC1$Group.1))
+
+SC2<-data.frame(t(SC1[,-1]))
+
+set.seed(2020)
+
+a<-ge.mfuzz.cselection(SC2,range = seq(3,10,2))
+
+b<-ge.mfuzz.getresult(a,5,"mfuzz_5_SC_NA80")
+
+#########mfuzz LC
+
+LC<-data.frame(protein14[c(which(protein14$gourp=="LC")),-c(1,3)])
+
+
+
+
+
+LC1<-aggregate(LC[,colnames(LC)[2:ncol(LC)]],by=list(LC$time),mean,na.rm= TRUE)
+
+
+row.names(LC1)<-c(as.matrix(LC1$Group.1))
+
+LC2<-data.frame(t(LC1[,-1]))
+
+set.seed(2020)
+
+a<-ge.mfuzz.cselection(LC2,range = seq(3,10,2))
+
+b<-ge.mfuzz.getresult(a,5,"mfuzz_5_LC_NA80")
+
+
+```
+
+
+
+
+
+
+```{r anova_NA80}
+
+
+rm(list = ls())
+library(readr)
+library(plyr)
+library(readxl)
+library(stringr)
+library(magrittr)
+library(Mfuzz)
+source("datamining_library_ge20200306.R")
+
+info<-read_xlsx("batch_info20200417_1854.xlsx",sheet=1)
+
+protein<-read.table("../1_matrix_preprocess/covid_wz_merge20200509_filename.txt",sep = "\t",header = T,row.names = 1)
+protein[,1:ncol(protein)] <- as.numeric(as.matrix(protein))
+
+info2<-info[c(which(c(as.matrix(info$gourp)) %in% c("SC","LC"))),]
+
+info3<-info2[,c(3,5,10)]
+
+
+info4<-data.frame(unique(info3))
+
+
+protein2<-data.frame(t(protein))
+
+
+protein3<-data.frame(row.names(protein2),protein2)
+
+names(protein3)<-c("filename",c(as.matrix(names(protein3[,-1]))))
+
+
+protein4<-data.frame(merge(info4,protein3,by.x="filename"))
+
+
+protein4.1<-protein4[1:10,1:10]
+
+
+row.names(protein4)<-c(as.matrix(protein4$filename))
+
+
+
+
+
+protein5<-data.frame(t(protein4[,-c(1:3)]))
+
+
+col<-ncol(protein5)
+
+write.csv(protein5,"tem.csv",row.names = F)
+
+protein6<-apply(protein5,1, function(X) sum(protein5[X,1:col],na.rm=T))
+                
+
+protein7<-data.frame(protein6,protein5)
+
+protein8<-data.frame(protein7[-c(which(c(as.matrix(protein7$protein6))%in%c("0"))),-1])
+
+protein9<-data.frame((protein8))
+
+
+ protein12<-data.frame(t(protein9))
+
+
+protein13<-data.frame(row.names(protein12),protein12)
+
+
+names(protein13)<-c("filename",c(as.matrix(names(protein13[,-1]))))
+
+
+protein14<-data.frame(merge(info4,protein13,by.x="filename"))
+
+
+  #### mfuzz LC
+
+
+LC<-data.frame(protein14[c(which(protein14$gourp=="LC")),-c(1,3)])
+
+# 
+# write.csv(LC,"LC.csv",row.names = F)
+
+
+############################################
+
+Matrix<-LC
+
+for (K in 1:5) {
+  
+
+
+mfuzz_prot<-read.csv(paste0("mfuzz_5_LC_NA80//mfuzz_",K,".csv"))
+
+prot<-as.matrix(mfuzz_prot$X)
+
+Matrix2<-data.frame(Matrix[,1],Matrix[,c(which(names(Matrix)%in% prot))])
+
+
+
+
+col<-ncol(Matrix2)
+names(Matrix2)<-c("label",as.matrix(names(Matrix2[,-1])))
+anova<-data.frame(names(Matrix2[,-1]))
+
+
+for (i in 2:col) {
+  aov<-(summary(aov(Matrix2[,i] ~ Matrix2[,1],Matrix2))[[1]])$`Pr(>F)`[1]
+  aov<-as.numeric(aov)
+  
+  
+  
+  # aov<-as.numeric(aov,digits = 4, scientific = F)
+  anova[c(i-1),2]<-aov
+}
+
+names(anova)<-c('protein',"pvalue")
+
+
+anova$P_value_adjust<-p.adjust(anova$pvalue, method="BH")
+
+anova2<-data.frame(anova[c(which(anova$P_value_adjust<=0.05)),])
+
+
+write.csv(anova2,paste0("mfuzz_5_LC_NA80/mfuzz_",K,"_anova_0.05_.csv"),row.names = F)
+
+}
+
+
+ #### mfuzz SC
+
+
+SC<-data.frame(protein14[c(which(protein14$gourp=="SC")),-c(1,3)])
+
+# 
+# write.csv(SC,"SC.csv",row.names = F)
+
+
+############################################
+
+Matrix<-SC
+
+for (K in 1:5) {
+  
+
+
+mfuzz_prot<-read.csv(paste0("mfuzz_5_SC_NA80//mfuzz_",K,".csv"))
+
+prot<-as.matrix(mfuzz_prot$X)
+
+Matrix2<-data.frame(Matrix[,1],Matrix[,c(which(names(Matrix)%in% prot))])
+
+
+
+
+col<-ncol(Matrix2)
+names(Matrix2)<-c("label",as.matrix(names(Matrix2[,-1])))
+anova<-data.frame(names(Matrix2[,-1]))
+
+
+for (i in 2:col) {
+  aov<-(summary(aov(Matrix2[,i] ~ Matrix2[,1],Matrix2))[[1]])$`Pr(>F)`[1]
+  aov<-as.numeric(aov)
+  # aov<-as.numeric(aov,digits = 4, scientific = F)
+  anova[c(i-1),2]<-aov
+}
+
+names(anova)<-c('protein',"pvalue")
+anova$P_value_adjust<-p.adjust(anova$pvalue, method="BH")
+
+anova2<-data.frame(anova[c(which(anova$P_value_adjust<=0.05)),])
+
+
+
+write.csv(anova2,paste0("mfuzz_5_SC_NA80/mfuzz_",K,"_anova_0.05_.csv"),row.names = F)
+
+}
+
+```
+
+```{r}
+rm(list = ls())
+
+
+library(clusterProfiler)
+
+library(org.Hs.eg.db)
+
+library(ggplot2)
+keytypes(org.Hs.eg.db) 
+
+data(geneList, package="DOSE")
+
+
+for (K in 2:4) {
+  
+
+
+protein<-read.csv(paste0("mfuzz_5_LC_NA80/mfuzz_",K,"_anova_0.01_.csv"))
+
+
+
+
+protein$protein<- as.character(protein$protein)
+
+
+protID = bitr(protein$protein, fromType="UNIPROT", toType=c("ENSEMBL", "ENTREZID"), OrgDb="org.Hs.eg.db")
+
+
+
+go_MF <- enrichGO(protID$ENTREZID, OrgDb = org.Hs.eg.db, ont='MF',pAdjustMethod = 'BH',pvalueCutoff = 0.05, 
+                 qvalueCutoff = 0.05,keyType = 'ENTREZID')
+
+
+go_CC <- enrichGO(protID$ENTREZID, OrgDb = org.Hs.eg.db, ont='CC',pAdjustMethod = 'BH',pvalueCutoff = 0.05, 
+                 qvalueCutoff = 0.05,keyType = 'ENTREZID')
+
+go_BP <- enrichGO(protID$ENTREZID, OrgDb = org.Hs.eg.db, ont='BP',pAdjustMethod = 'BH',pvalueCutoff = 0.05, 
+                 qvalueCutoff = 0.05,keyType = 'ENTREZID')
+
+
+
+barplot(go_MF,showCategory=10,drop=T,title = "Molecular Function")
+
+ggsave(paste0("mfuzz_5_LC_NA80/go_MF_cluster",K,".pdf"),width = 5,height = 4)
+
+df<-data.frame(go_MF)
+
+write.csv(df,paste0("mfuzz_5_LC_NA80/go_MF_cluster",K,".csv"))
+
+
+barplot(go_BP,showCategory=10,drop=T,title = "Biological Process")
+
+ggsave(paste0("mfuzz_5_LC_NA80/go_BP_cluster",K,".pdf"),width = 5,height = 4)
+
+barplot(go_CC,showCategory=10,drop=T,title = "Cellular Component")
+
+ggsave(paste0("mfuzz_5_LC_NA80/go_CC_cluster",K,".pdf"),width = 5,height = 4)
+
+}
+
+
+
+for (K in 2:5) {
+  
+
+
+protein<-read.csv(paste0("mfuzz_5_SC_NA80/mfuzz_",K,"_anova_0.01_.csv"))
+
+
+
+
+protein$protein<- as.character(protein$protein)
+
+
+protID = bitr(protein$protein, fromType="UNIPROT", toType=c("ENSEMBL", "ENTREZID"), OrgDb="org.Hs.eg.db")
+
+
+
+go_MF <- enrichGO(protID$ENTREZID, OrgDb = org.Hs.eg.db, ont='MF',pAdjustMethod = 'BH',pvalueCutoff = 0.05, 
+                 qvalueCutoff = 0.05,keyType = 'ENTREZID')
+
+
+go_CC <- enrichGO(protID$ENTREZID, OrgDb = org.Hs.eg.db, ont='CC',pAdjustMethod = 'BH',pvalueCutoff = 0.05, 
+                 qvalueCutoff = 0.05,keyType = 'ENTREZID')
+
+go_BP <- enrichGO(protID$ENTREZID, OrgDb = org.Hs.eg.db, ont='BP',pAdjustMethod = 'BH',pvalueCutoff = 0.05, 
+                 qvalueCutoff = 0.05,keyType = 'ENTREZID')
+
+
+
+barplot(go_MF,showCategory=10,drop=T,title = "Molecular Function")
+
+ggsave(paste0("mfuzz_5_SC_NA80/go_MF_cluster",K,".pdf"))
+df<-data.frame(go_MF)
+
+write.csv(df,paste0("mfuzz_5_SC_NA80/go_MF_cluster",K,".csv"))
+
+barplot(go_BP,showCategory=10,drop=T,title = "Biological Process")
+
+ggsave(paste0("mfuzz_5_SC_NA80/go_BP_cluster",K,".pdf"),width = 5,height = 4)
+
+barplot(go_CC,showCategory=10,drop=T,title = "Cellular Component")
+
+ggsave(paste0("mfuzz_5_SC_NA80/go_CC_cluster",K,".pdf"),width = 5,height = 4)
+
+}
+
+
+
+```
+
+```{r}
+
+
+rm(list = ls())
+
+
+
+library(org.Hs.eg.db)
+
+
+
+protein<-read.csv("Cell_adhesion_molecule_bingding.csv")
+
+keytypes(org.Hs.eg.db) 
+
+
+
+
+protID = bitr(protein$ENTREZID, fromType="ENTREZID", toType=c("SYMBOL", "UNIPROT"), OrgDb="org.Hs.eg.db")
+
+
+
+write.csv(protID,"Cell_adhesion_molecule_bingding_ID.csv")
+
+
+unique(protID$SYMBOL)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+

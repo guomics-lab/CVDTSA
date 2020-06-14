@@ -1,0 +1,1014 @@
+
+
+```{r}
+rm(list = ls())
+library(readr)
+library(plyr)
+library(readxl)
+library(stringr)
+library(magrittr)
+source("D:/datamining_library_ge20200306.R")
+df <- ge.readtable("../1_matrix_preprocess/covid_wz_merge20200509_filename.txt")
+df1 <- df
+info <- read_xlsx("batch_info20200417_1854.xlsx",sheet = 2)
+names(df1) <- info$sampleid[match(names(df1),info$filename)] %>%as.character()
+
+df1 <- df1[,!is.na(names(df1))]
+df1 <- df1[apply(df1,1, function(x){sum(!is.na(x))})>0,]
+df1[,1:ncol(df1)] <- as.numeric(as.matrix(df1))
+
+#ge.writetable(df3,"covid_wz_merge20200416.txt")
+
+df2 <- df1[,!grepl("p0_0",names(df1))]
+ctrl <- df1[,grepl("p0_0",names(df1))]
+df2$p0_0 <- apply(ctrl,1,mean,na.rm=T)
+
+```
+
+
+
+protein matrix_nine_combine add ctrl 
+```{r}
+
+er <- df2[,-225]
+ctrl <- df2[,225]
+
+df.sc <- c()
+df.lc <- c()
+for (i in 1:9) {
+  time <- as.character(ge.split(names(er),"_",2))
+  time <- str_sub(time,1,1)
+  SC_type <- which(info$gourp[match(as.character(ge.split(names(er),"\\.",1)) ,info$sampleid)]=="SC" & time==i)
+  df.sc <- cbind(df.sc,apply(er[,SC_type],1,mean,na.rm=T))
+  LC_type <- which(info$gourp[match(as.character(ge.split(names(er),"\\.",1)) ,info$sampleid)]=="LC" & time==i)
+  df.lc <- cbind(df.lc,apply(er[,LC_type],1,mean,na.rm=T))
+}
+colnames(df.sc) <- paste0("SC_",1:9)
+colnames(df.lc) <- paste0("LC_",1:9)
+df.nine_combine <- cbind(df.sc,df.lc)
+df.nine_combine_ctrl <- df.nine_combine/ctrl
+
+prot209<- read_xlsx("209_GENE.xlsx")
+df.nine_combine_ctrl2 <- df.nine_combine_ctrl[prot209$yourlist,]
+
+ge.writetable(df.nine_combine_ctrl2,"protein_matrix_nine_combine_divide_ctrl20200509.txt")
+```
+
+
+VOLCANO time lc/sc
+```{r}
+sc_type <- which(info$gourp[match(as.character(ge.split(names(df2),"\\.",1)) ,info$sampleid)]=="SC")
+lc_type <- which(info$gourp[match(as.character(ge.split(names(df2),"\\.",1)) ,info$sampleid)]=="LC")
+df3 <- df2[,c(sc_type,lc_type)]
+
+df3[is.na(df3)] <- 0
+
+sum <- c()
+diff_prot <- c()
+tim <- c()
+fd_sum <- c()
+for (i in 1:9) {
+  
+  time <- as.character(ge.split(names(df3),"_",2))
+  time <- str_sub(time,1,1)
+  SC_type <- which(info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)]=="SC" & time==i)
+  LC_type <- which(info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)]=="LC" & time==i)
+  
+
+  
+  df8 <- df3[,c(SC_type,LC_type)]
+  df8$fd <- apply(df3,1, function(x) log2((mean(x[LC_type],na.rm = T)/mean(x[SC_type],na.rm = T))))
+  x<-c(0.0,0.0)
+  
+  x <- apply(df3, 1, function(x){t.test(x[LC_type],x[SC_type], paired = F, var.equal = F)$p.value})
+  df8$P_value<-x
+  df8$P_value_adjust<-p.adjust(df8$P_value, method="BH")
+
+  pdf(paste0("T",i,"_LC_SC_volcano.pdf"))
+  plot(df8$fd, -log10(df8$P_value), col="#00000033", pch=19,
+        xlab=paste("log2 (fold change)"),
+        ylab="-log10 (P_value)",xlim=c(-4,4),
+        main="LC & SC")
+  
+  up <- subset(df8, df8$P_value < 0.05 & df8$fd > 0.25)
+  down <- subset(df8, df8$P_value < 0.05 & df8$fd < -0.25)
+  write.csv(up,file =paste0("T",i,"_LC_SC_up_volcano.csv") )
+  write.csv(down,file = paste0("T",i,"_LC_SC_dw_volcano.csv"))
+  points(up$fd, -log10(up$P_value), col=1, bg = brewer.pal(9, "YlOrRd")[6], pch=21, cex=1.5)
+  points(down$fd, -log10(down$P_value), col = 1, bg = brewer.pal(11,"RdBu")[9], pch = 21,cex=1.5)
+  abline(h=1.3, v=c(-0.25,0.25), lty=2,lwd=1)
+  dev.off()
+  
+  diff_prot <- c(diff_prot,c(row.names(up),row.names(down)))
+  tim <- c(tim,rep(i,nrow(up)+nrow(down)))
+  fd_sum <- c(fd_sum,c(up$fd,down$fd))
+  #sum <- rbind(sum,c(length(SC_type),length(LC_type)))
+  # pdf("ZX_PT_labelvolcano.pdf")
+  # plot(df8$fd, -log10(df8$P_value_adjust), col="#00000033", pch=19,
+  #       xlab=paste("log2 (fold change)"),
+  #       ylab="-log10 (P_value_adjust)",xlim=c(-4,4),
+  #       main="ZX & PT")
+  # 
+  # up <- subset(df8, df8$P_value_adjust < 0.05 & df8$fd > 0.25)
+  # down <- subset(df8, df8$P_value_adjust < 0.05 & df8$fd < -0.25)
+  # points(up$fd, -log10(up$P_value_adjust), col=1, bg = brewer.pal(9, "YlOrRd")[6], pch=21, cex=1.5)
+  # points(down$fd, -log10(down$P_value_adjust), col = 1, bg = brewer.pal(11,"RdBu")[9], pch = 21,cex=1.5)
+  # text(up$fd, -log10(up$P_value_adjust),row.names(up),cex=0.5)
+  # text(down$fd, -log10(down$P_value_adjust),row.names(down),cex=0.5)
+  # abline(h=1.3, v=c(-0.25,0.25), lty=2,lwd=1)
+  # dev.off()
+  
+}
+
+#colnames(sum) <- c("SC","LC")
+
+```
+
+freq matrix
+```{r}
+data <- data.frame(prot=diff_prot,time=tim)
+write.csv(data,"test.csv")
+library(reshape2)
+data2 <- dcast(data, prot ~ time,length)
+
+write.csv(data2,"diffprot_freq_matrix.csv")
+
+
+data <- data.frame(prot=diff_prot,time=tim,fd=fd_sum)
+library(reshape2)
+data2 <- dcast(data, prot ~ time,value.var="fd")
+
+write.csv(data2,"diffprot_freq_fd_matrix.csv",na="")
+```
+
+
+
+volcano SC1 & LC1 - ctrl 
+```{r}
+time <- as.character(ge.split(names(df1),"_",2))
+time <- str_sub(time,1,1)
+sc_type <- which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="SC" & time==1)
+lc_type <- which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="LC" & time==1)
+ctrl_type <- which(grepl("p0_0",names(df1)))
+
+df3 <- df1[,c(ctrl_type,sc_type,lc_type)]
+df3[is.na(df3)] <- 0
+
+sc_type <- which(info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)]=="SC")
+lc_type <- which(info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)]=="LC")
+ctrl_type <- which(grepl("p0_0",names(df3)))
+
+  df8 <- df3[,c(ctrl_type,sc_type,lc_type)]
+  df8$fd <- apply(df3,1, function(x) log2((mean(x[c(sc_type,lc_type)],na.rm = T)/mean(x[ctrl_type],na.rm = T))))
+  x<-c(0.0,0.0)
+
+  x <- apply(df3, 1, function(x){t.test(x[ctrl_type],x[c(sc_type,lc_type)], paired = F, var.equal = F)$p.value})
+  df8$P_value<-x
+  df8$P_value_adjust<-p.adjust(df8$P_value, method="BH")
+# write.csv(df8,"SCLC_Ctrl_all_volcano.csv")
+  pdf(paste0("SCLC_Ctrl_volcano.pdf"))
+  plot(df8$fd, -log10(df8$P_value_adjust), col="#00000033", pch=19,
+        xlab=paste("log2 (fold change)"),
+        ylab="-log10 (P_value_adjust)",xlim=c(-4,4),
+        main="SCLC & Ctrl")
+  
+  up <- subset(df8, df8$P_value_adjust < 0.05 & df8$fd > 0.25)
+  down <- subset(df8, df8$P_value_adjust < 0.05 & df8$fd < -0.25)
+  write.csv(up,file =paste0("SCLC_Ctrl_up_volcano.csv") )
+  write.csv(down,file = paste0("SCLC_Ctrl_dw_volcano.csv"))
+  points(up$fd, -log10(up$P_value_adjust), col=1, bg = brewer.pal(9, "YlOrRd")[6], pch=21, cex=1.5)
+  points(down$fd, -log10(down$P_value_adjust), col = 1, bg = brewer.pal(11,"RdBu")[9], pch = 21,cex=1.5)
+  abline(h=1.3, v=c(-0.25,0.25), lty=2,lwd=1)
+  dev.off()
+  
+########################################################
+  
+  
+  pdf(paste0("SCLC_Ctrlnoadjust_volcano.pdf"))
+  plot(df8$fd, -log10(df8$P_value), col="#00000033", pch=19,
+        xlab=paste("log2 (fold change)"),
+        ylab="-log10 (P_value)",xlim=c(-4,4),
+        main="SCLC & Ctrl")
+  
+  up <- subset(df8, df8$P_value < 0.05 & df8$fd > 0.25)
+  down <- subset(df8, df8$P_value < 0.05 & df8$fd < -0.25)
+  write.csv(up,file =paste0("SCLC_Ctrlnoadjust_up_volcano.csv") )
+  write.csv(down,file = paste0("SCLC_Ctrlnoadjust_dw_volcano.csv"))
+  points(up$fd, -log10(up$P_value), col=1, bg = brewer.pal(9, "YlOrRd")[6], pch=21, cex=1.5)
+  points(down$fd, -log10(down$P_value), col = 1, bg = brewer.pal(11,"RdBu")[9], pch = 21,cex=1.5)
+  abline(h=1.3, v=c(-0.25,0.25), lty=2,lwd=1)
+  dev.off()
+
+```
+
+
+
+
+
+boxplot_97
+```{r}
+library(Rmisc)
+prot <- read_xlsx("97prot.xlsx",sheet = 2)
+prot1 <- as.character(prot$yourlist) 
+gene <- prot$Genename[match(prot1,prot$yourlist)]
+time <- as.character(ge.split(names(df1),"_",2))
+time <- str_sub(time,1,1)
+
+SC_type <-c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="SC"),which(time==0))
+LC_type <- c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="LC"),which(time==0))
+
+df3 <- df1
+
+
+nm.prot <- which(row.names(df1) %in% prot1)
+
+
+dict <- data.frame(time=c(0:9),col=brewer.pal(9,"OrRd")[c(2,2,2:9)])
+for (i in nm.prot) {
+  title <- paste0(row.names(df3)[i],"_",prot$Genename[match(row.names(df3)[i],prot$yourlist)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time)
+  data1 <- data[SC_type,]
+
+  a <- ggplot(data=data1, aes(x =time, y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data1$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle(paste0(title,"_SC"))+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  data2 <- data[LC_type,]
+  b <- ggplot(data=data2, aes(x =time, y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data2$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle("LC")+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  
+  
+  ggsave(paste0("boxplot97/",title, ".pdf"),plot=multiplot(a,b,cols=2),width=8,height=4)
+
+}
+
+
+#---------------------------------------------------
+
+for (i in nm.prot) {
+  title <- paste0(row.names(df3)[i],"_",prot$Genename[match(row.names(df3)[i],prot$yourlist)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time)
+  data1 <- data[SC_type,]
+
+  a <- ggplot(data=data1, aes(x =time, y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data1$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+    geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#FDB462",fill="#FDB462")+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle(paste0(title,"_SC"))+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  data2 <- data[LC_type,]
+
+ b <- ggplot(data2,aes(x =(time), y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data2$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+    geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#BC80BD",fill="#BC80BD")+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle("LC")+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+    theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+ ggplot(data2,aes(x = as.numeric(time), y = as.numeric(value)))+
+    geom_point()+
+   geom_smooth()
+  
+  ggsave(paste0("boxplot97_addline/",title, ".pdf"),plot=multiplot(a,b,cols=2),width=8,height=4)
+
+}
+
+
+#-------------------------------------------------------------------------
+for (i in nm.prot) {
+  title <- paste0(row.names(df3)[i],"_",prot$Genename[match(row.names(df3)[i],prot$yourlist)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time,type=info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)],stringsAsFactors = F)
+  data$value[is.na(data$value)] <- 0
+  data$type <- gsub("SC","1SC",data$type )
+  data$type <- gsub("LC","2LC",data$type )
+  data$group <- paste0(data$time,"_",data$type)
+  data1 <- data[data$time!=0,]
+
+    a <- ggplot(data=data1, aes(x =time, y =value ,fill=type,group=group)) +
+    geom_boxplot(size=1,width=0.7,outlier.shape = NA)+
+    geom_jitter(size=0.5,width=0.1,color="black") +
+    geom_smooth(data=data1, aes(x = time, y =value ,fill=as.factor(type),color=as.factor(type),group= as.factor(type)),method = 'loess',formula = y~x)+
+      ylim(0,4)+
+    ggtitle(title)+
+    labs(x="Time(weeks)",y="Protein expression ratio.",fill= "type")+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    scale_fill_manual(values=c("#FDB462","#BC80BD"))+
+      scale_colour_manual(values=c("#FDB462","#BC80BD"))+
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    #theme(axis.text.x = element_text(  hjust = 1,angle = 45))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+    ggsave(paste0("boxplot97_addline_combine/",title, ".pdf"),plo=a,width=5,height=4)
+    
+}
+
+
+#-------------------------------------------------------------------------
+cyto <- read_xlsx("add_cyto_20200602-1522.xlsx",col_names = F)
+nm.prot <- which(row.names(df3) %in% cyto$...1)
+for (i in nm.prot) {
+  title <- paste0(row.names(df3)[i],"_",cyto$...2[match(row.names(df3)[i],cyto$...1)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time,type=info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)],stringsAsFactors = F)
+  data$value[is.na(data$value)] <- 0
+  data$type <- gsub("SC","1SC",data$type )
+  data$type <- gsub("LC","2LC",data$type )
+  data$group <- paste0(data$time,"_",data$type)
+  data1 <- data[data$time!=0,]
+
+    a <- ggplot(data=data1, aes(x =time, y =value ,fill=type,group=group)) +
+    geom_boxplot(size=1,width=0.7,outlier.shape = NA)+
+    geom_jitter(size=0.5,width=0.1,color="black") +
+    geom_smooth(data=data1, aes(x = time, y =value ,fill=as.factor(type),color=as.factor(type),group= as.factor(type)),method = 'loess',formula = y~x)+
+      ylim(0,4)+
+    ggtitle(title)+
+    labs(x="Time(weeks)",y="Protein expression ratio.",fill= "type")+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    scale_fill_manual(values=c("#FDB462","#BC80BD"))+
+      scale_colour_manual(values=c("#FDB462","#BC80BD"))+
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    #theme(axis.text.x = element_text(  hjust = 1,angle = 45))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+    ggsave(paste0("boxplot_addcyto/",title, ".pdf"),plo=a,width=5,height=4)
+    
+}
+
+nm.prot <- which(row.names(df3) %in% "A0A087WTB5")
+for (i in nm.prot) {
+  title <- paste0(row.names(df3)[i],"_",cyto$...2[match(row.names(df3)[i],cyto$...1)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time,type=info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)],stringsAsFactors = F)
+  data$value[is.na(data$value)] <- 0
+  data$type <- gsub("SC","1SC",data$type )
+  data$type <- gsub("LC","2LC",data$type )
+  data$group <- paste0(data$time,"_",data$type)
+  data1 <- data[data$time!=0,]
+
+    a <- ggplot(data=data1, aes(x =time, y =value ,fill=type,group=group)) +
+    geom_boxplot(size=1,width=0.7,outlier.shape = NA)+
+    geom_jitter(size=0.5,width=0.1,color="black") +
+    geom_smooth(data=data1, aes(x = time, y =value ,fill=as.factor(type),color=as.factor(type),group= as.factor(type)),method = 'loess',formula = y~x)+
+      ylim(0,2)+
+    ggtitle(title)+
+    labs(x="Time(weeks)",y="Protein expression ratio.",fill= "type")+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    scale_fill_manual(values=c("#FDB462","#BC80BD"))+
+      scale_colour_manual(values=c("#FDB462","#BC80BD"))+
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    #theme(axis.text.x = element_text(  hjust = 1,angle = 45))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+    ggsave(paste0("boxplot_addcyto/",title, ".pdf"),plo=a,width=5,height=4)
+    
+}
+
+#-------------------------------------------------------------------------
+nm.prot <- which(row.names(df1) %in% c("A0A087WTB5","P40189"))
+gene_prot <- c("A0A087WTB5_IL6R","P40189_IL6ST")
+n=1
+for (i in nm.prot) {
+  title <- paste0(gene_prot[n])
+  n=n+1
+  data <- data.frame(value=as.numeric(df3[i,]),time=time,label=info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)])
+  data$value[is.na(data$value)] <- 0
+  # data.tmp <- data
+  # data.tmp$value[is.na(data.tmp$value)] <- 0
+  # p <- c()
+  # for (b in 1:4) {
+  #   data.tmp2 <- data.tmp[data.tmp$time==b,]
+  #   p.test <-  t.test(data.tmp2$value[which(data.tmp2$label=="LC")],data.tmp2$value[which(data.tmp2$label=="SC")], paired = F, var.equal = F)$p.value
+  #   p <- c(p,p.test)
+  # }
+  data1 <- data[SC_type,]
+
+  a <- ggplot(data=data1, aes(x =time, y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data1$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+    geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#FDB462",fill="#FDB462")+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle(paste0(title,"_SC"))+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  data2 <- data[LC_type,]
+
+ b <- ggplot(data2,aes(x =(time), y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data2$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+    geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#BC80BD",fill="#BC80BD")+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle("LC")+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+    theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+ ggplot(data2,aes(x = as.numeric(time), y = as.numeric(value)))+
+    geom_point()+
+   geom_smooth()
+  
+  ggsave(paste0("boxplot2/",title, "NA0.pdf"),plot=multiplot(a,b,cols=2),width=8,height=4)
+
+}
+
+```
+
+
+
+boxplot_33
+```{r}
+library(Rmisc)
+prot <- read_xlsx("go_20200520-1252.xlsx")
+prot1 <- as.character(prot$Uniprot_ID) 
+gene <- prot$Gene_name[match(prot1,prot$Uniprot_ID)]
+time <- as.character(ge.split(names(df1),"_",2))
+time <- str_sub(time,1,1)
+
+SC_type <-c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="SC"))
+LC_type <- c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="LC"))
+
+df3 <- df1
+
+nm.prot <- which(row.names(df1) %in% prot1)
+
+
+dict <- data.frame(time=c(1:9),col=brewer.pal(9,"OrRd")[c(2,2:9)])
+
+for (i in nm.prot) {
+  title <- paste0(row.names(df3)[i],"_",prot$Gene_name[match(row.names(df3)[i],prot$Uniprot_ID)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time)
+  data1 <- data[SC_type,]
+
+  a <- ggplot(data=data1, aes(x =time, y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data1$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+   # geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#FDB462",fill="#FDB462")+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle(paste0(title,"_SC"))+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  data2 <- data[LC_type,]
+
+ b <- ggplot(data2,aes(x =(time), y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data2$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+  #  geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#BC80BD",fill="#BC80BD")+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle("LC")+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+    theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+ ggplot(data2,aes(x = as.numeric(time), y = as.numeric(value)))+
+    geom_point()+
+   geom_smooth()
+  
+  ggsave(paste0("boxplot30/",title, ".pdf"),plot=multiplot(a,b,cols=2),width=8,height=4)
+
+}
+
+
+```
+
+
+
+boxplot_30  NA0
+```{r}
+library(Rmisc)
+prot <- read_xlsx("go_20200520-1252.xlsx")
+prot1 <- as.character(prot$Uniprot_ID) 
+gene <- prot$Gene_name[match(prot1,prot$Uniprot_ID)]
+time <- as.character(ge.split(names(df1),"_",2))
+time <- str_sub(time,1,1)
+
+SC_type <-c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="SC"))
+LC_type <- c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="LC"))
+
+df3 <- df1
+
+nm.prot <- which(row.names(df1) %in% prot1)
+
+
+dict <- data.frame(time=c(1:9),col=brewer.pal(9,"OrRd")[c(2,2:9)])
+
+for (i in nm.prot) {
+  title <- paste0(row.names(df3)[i],"_",prot$Gene_name[match(row.names(df3)[i],prot$Uniprot_ID)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time)
+  data1 <- data[SC_type,]
+  data1$value[is.na(data1$value)] <- 0
+  a <- ggplot(data=data1, aes(x =time, y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data1$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+   # geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#FDB462",fill="#FDB462")+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle(paste0(title,"_SC"))+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  data2 <- data[LC_type,]
+data2$value[is.na(data2$value)] <- 0
+ b <- ggplot(data2,aes(x =(time), y =value)) +
+    geom_jitter(alpha = 0.5,size=3,colour =as.factor(sapply(data2$time, function(v){dict$col[match(v,dict$time)]})) ) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+  #  geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#BC80BD",fill="#BC80BD")+
+    ylim(0,4)+
+    labs(x="Time (weeks)",y="Protein expression ratio",fill= "type")+
+    ggtitle("LC")+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+    theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+ ggplot(data2,aes(x = as.numeric(time), y = as.numeric(value)))+
+    geom_point()+
+   geom_smooth()
+  
+  ggsave(paste0("boxplot30_NA0/",title, ".pdf"),plot=multiplot(a,b,cols=2),width=8,height=4)
+
+}
+
+
+```
+
+
+boxplot_33  time
+```{r}
+library(Rmisc)
+prot <- read_xlsx("go_20200520-1252.xlsx")
+time <- as.character(ge.split(names(df1),"_",2))
+time <- str_sub(time,1,1)
+
+SC_type <-c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="SC"))
+LC_type <- c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="LC"))
+dict <- data.frame(time=c(1:9),col=brewer.pal(9,"OrRd")[c(2,2:9)])
+df3 <- df1
+for (n in 1:9) {
+  nm.prot <- which(row.names(df1) %in% prot$Uniprot_ID[which(prot$`Time point` %in% n)])
+
+for (i in nm.prot) {
+  title <- paste0(n,"_",row.names(df3)[i],"_",prot$Gene_name[match(row.names(df3)[i],prot$Uniprot_ID)])
+ title2 <- paste0(row.names(df3)[i],"_",prot$Gene_name[match(row.names(df3)[i],prot$Uniprot_ID)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time,type=info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)])
+  data1 <- data[data$time==n,]
+  data2 <- data1
+  data2[is.na(data2)] <- 0
+  pv <-  t.test(data2$value[which(data2$type=="LC")],data2$value[which(data2$type=="SC")], paired = F, var.equal = F)$p.value
+
+  a <- ggplot(data=data1, aes(x =type, y =value,fill=type,color=type,group=type)) +
+    geom_jitter(alpha = 0.5,size=3) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+   # geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#FDB462",fill="#FDB462")+
+    # ylim(0,4)+
+    labs(x="Type",y="Protein expression ratio",subtitle =pv , fill= "type")+
+    ggtitle(paste0(title2))+
+    scale_x_discrete(limits= c("SC","LC") )+
+    scale_fill_manual(values=c("#BC80BD","#FDB462"))+
+    scale_color_manual(values=c("#BC80BD","#FDB462"))+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  
+  ggsave(paste0("boxplot30/time/",title, ".pdf"),plot=a,width=4,height=4)
+
+ }
+}
+
+```
+
+boxplot_33  time  NA-0
+```{r}
+library(Rmisc)
+prot <- read_xlsx("go_20200520-1252.xlsx")
+time <- as.character(ge.split(names(df1),"_",2))
+time <- str_sub(time,1,1)
+
+SC_type <-c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="SC"))
+LC_type <- c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="LC"))
+dict <- data.frame(time=c(1:9),col=brewer.pal(9,"OrRd")[c(2,2:9)])
+df3 <- df1
+for (n in 1:9) {
+  nm.prot <- which(row.names(df1) %in% prot$Uniprot_ID[which(prot$`Time point` %in% n)])
+
+for (i in nm.prot) {
+  title <- paste0(n,"_",row.names(df3)[i],"_",prot$Gene_name[match(row.names(df3)[i],prot$Uniprot_ID)])
+ title2 <- paste0(row.names(df3)[i],"_",prot$Gene_name[match(row.names(df3)[i],prot$Uniprot_ID)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time,type=info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)])
+  data1 <- data[data$time==n,]
+  data1[is.na(data1)] <- 0
+  data2 <- data1
+  data2[is.na(data2)] <- 0
+  pv <-  t.test(data2$value[which(data2$type=="LC")],data2$value[which(data2$type=="SC")], paired = F, var.equal = F)$p.value
+
+  a <- ggplot(data=data1, aes(x =type, y =value,fill=type,color=type,group=type)) +
+    geom_jitter(alpha = 0.5,size=3) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+   # geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#FDB462",fill="#FDB462")+
+    # ylim(0,4)+
+    labs(x="Type",y="Protein expression ratio",subtitle =pv , fill= "type")+
+    ggtitle(paste0(title2))+
+    scale_x_discrete(limits= c("SC","LC") )+
+    scale_fill_manual(values=c("#BC80BD","#FDB462"))+
+    scale_color_manual(values=c("#BC80BD","#FDB462"))+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  
+  ggsave(paste0("boxplot30_NA0/time/",title, ".pdf"),plot=a,width=4,height=4)
+
+ }
+}
+
+```
+
+
+boxplot_921  time  NA-0
+```{r}
+library(Rmisc)
+prot <- read.csv("LC_SC_9_points/diffprot_freq_matrix.csv",stringsAsFactors = F)
+gene <- read_xlsx("boxplot30_NA0/time3/uniprot.xlsx")
+time <- as.character(ge.split(names(df1),"_",2))
+time <- str_sub(time,1,1)
+
+SC_type <-c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="SC"))
+LC_type <- c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="LC"))
+dict <- data.frame(time=c(1:9),col=brewer.pal(9,"OrRd")[c(2,2:9)])
+df3 <- df1
+sum <- c()
+for (n in 1:9) {
+  nm2 <- prot$prot[which(prot[,n+2]==1)]
+  nm.prot <- which(row.names(df1) %in% nm2)
+
+for (i in nm.prot) {
+  title <- paste0(n,"_",row.names(df3)[i],"_",gene$Gene[match(row.names(df3)[i],gene$yourlist)])
+  title2 <- paste0(n,"_",row.names(df3)[i],"_",gene$Gene[match(row.names(df3)[i],gene$yourlist)])
+  title2 <- gsub("\\/","_",title2)
+  data <- data.frame(value=as.numeric(df3[i,]),time=time,type=info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)])
+  data1 <- data[data$time==n,]
+  if(sum(is.na(data1$value))/nrow(data1)<0.8){
+  data1[is.na(data1)] <- 0
+  data2 <- data1
+  data2[is.na(data2)] <- 0
+  pv <-  t.test(data2$value[which(data2$type=="LC")],data2$value[which(data2$type=="SC")], paired = F, var.equal = F)$p.value
+  fc <-  log2((mean(data2$value[which(data2$type=="LC")])/mean(data2$value[which(data2$type=="SC")])))
+  sum <- rbind(sum,c(n,title,pv,fc))
+  a <- ggplot(data=data1, aes(x =type, y =value,fill=type,color=type,group=type)) +
+    geom_jitter(alpha = 0.5,size=3) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+   # geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#FDB462",fill="#FDB462")+
+    # ylim(0,4)+
+    labs(x="Type",y="Protein expression ratio",subtitle =pv , fill= "type")+
+    ggtitle(paste0(title))+
+    scale_x_discrete(limits= c("SC","LC") )+
+    scale_fill_manual(values=c("#BC80BD","#FDB462"))+
+    scale_color_manual(values=c("#BC80BD","#FDB462"))+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  
+  ggsave(paste0("boxplot30_NA0/time3/",title2, ".pdf"),plot=a,width=4,height=4)
+
+ }
+}
+}
+
+write.csv(sum,"boxplot30_NA0/time3/sum_list.csv")
+```
+
+
+
+boxplot_921  time  NA-0   pvalue<0.01
+```{r}
+library(Rmisc)
+prot <- read.csv("LC_SC_9_points/diffprot_freq_matrix.csv",stringsAsFactors = F)
+gene <- read_xlsx("boxplot30_NA0/time3/uniprot.xlsx")
+time <- as.character(ge.split(names(df1),"_",2))
+time <- str_sub(time,1,1)
+
+SC_type <-c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="SC"))
+LC_type <- c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="LC"))
+dict <- data.frame(time=c(1:9),col=brewer.pal(9,"OrRd")[c(2,2:9)])
+df3 <- df1
+sum <- c()
+for (n in 1:9) {
+  nm2 <- prot$prot[which(prot[,n+2]==1)]
+  nm.prot <- which(row.names(df1) %in% nm2)
+
+for (i in nm.prot) {
+  title <- paste0(n,"_",row.names(df3)[i],"_",gene$Gene[match(row.names(df3)[i],gene$yourlist)])
+  title2 <- paste0(n,"_",row.names(df3)[i],"_",gene$Gene[match(row.names(df3)[i],gene$yourlist)])
+  title2 <- gsub("\\/","_",title2)
+  data <- data.frame(value=as.numeric(df3[i,]),time=time,type=info$gourp[match(as.character(ge.split(names(df3),"\\.",1)) ,info$sampleid)])
+  data1 <- data[data$time==n,]
+  if(sum(is.na(data1$value))/nrow(data1)<0.8){
+  data1[is.na(data1)] <- 0
+  data2 <- data1
+  data2[is.na(data2)] <- 0
+  pv <-  t.test(data2$value[which(data2$type=="LC")],data2$value[which(data2$type=="SC")], paired = F, var.equal = F)$p.value
+  if(pv<0.01){
+  fc <-  log2((mean(data2$value[which(data2$type=="LC")])/mean(data2$value[which(data2$type=="SC")])))
+ # sum <- rbind(sum,c(n,title,pv,fc))
+  a <- ggplot(data=data1, aes(x =type, y =value,fill=type,color=type,group=type)) +
+    geom_jitter(alpha = 0.5,size=3) +
+    geom_boxplot(alpha = .5,size=1,outlier.shape = NA)+
+   # geom_smooth( aes(x = as.numeric(time), y =as.numeric(value)),method = 'loess',formula = y~x,color="#FDB462",fill="#FDB462")+
+    # ylim(0,4)+
+    labs(x="Type",y="Protein expression ratio",subtitle =pv , fill= "type")+
+    ggtitle(paste0(title))+
+    scale_x_discrete(limits= c("SC","LC") )+
+    scale_fill_manual(values=c("#BC80BD","#FDB462"))+
+    scale_color_manual(values=c("#BC80BD","#FDB462"))+
+    theme_bw() + 
+    theme(legend.position='none')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text( hjust = 0.5))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  
+  
+  ggsave(paste0("boxplot30_NA0/pvalue/",title2, ".pdf"),plot=a,width=4,height=4)
+
+ }
+}
+}
+}
+
+```
+
+boxplot_30 combine
+```{r}
+library(Rmisc)
+prot <- read_xlsx("go_20200520-1252.xlsx")
+prot1 <- as.character(prot$Uniprot_ID) 
+gene <- prot$Gene_name[match(prot1,prot$Uniprot_ID)]
+time <- as.character(ge.split(names(df1),"_",2))
+time <- str_sub(time,1,1)
+
+SC_type <-c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="SC"))
+LC_type <- c(which(info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)]=="LC"))
+
+df3 <- df1
+
+nm.prot <- which(row.names(df1) %in% c(prot1,"A1L4H1"))
+
+
+dict <- data.frame(time=c(1:9),col=brewer.pal(9,"OrRd")[c(2,2:9)])
+
+
+  plot.boxplot <- function(data,x,y,type,group,filename,title="boxplot"){
+  a <- ggplot(data=data, aes(x =x, y =y ,fill=type,group=group)) +
+    geom_boxplot(size=1,width=0.7)+
+    geom_jitter(size=0.8,width=0.1,color="black") +
+    ggtitle(title)+
+    labs(x="Time(weeks)",y="Protein expression ratio.",fill= "type")+
+    theme_bw() + 
+    theme(legend.position='top')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    scale_fill_manual(values=c("#FDB462","#BC80BD"))+
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text(  hjust = 1,angle = 45))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  ggsave(paste0(filename, ".pdf"),plot=a,width=10,height=8)
+  }
+  
+for (i in nm.prot) {
+  title <- paste0(row.names(df3)[i],"_",prot$Gene_name[match(row.names(df3)[i],prot$Uniprot_ID)])
+  data <- data.frame(value=as.numeric(df3[i,]),time=time,label=info$gourp[match(as.character(ge.split(names(df1),"\\.",1)) ,info$sampleid)])
+  data$sample <- paste0(data$time,"_",data$label)
+  data$label <- gsub("SC","1SC",data$label)
+  data$label <- gsub("LC","2LC",data$label)
+  data1 <- data[data$time !=0,]
+plot.boxplot(data1,data1$sample,data1$value,data1$label,data1$sample,filename = paste0("boxplot30_combine/",title, ".pdf"),title = title)
+}
+```
+
+heatmap_20200507 prot209
+```{r}
+combine <- ge.readtable("protein_matrix_nine_combine_divide_ctrl20200509.txt")
+combine2 <- combine
+combine2[is.na(combine2)] <- 0
+
+prot <- read_xlsx("209_GENE.xlsx")
+prot1 <- as.character(prot$yourlist) 
+gene <- prot$Gene[match(prot1,prot$yourlist)]
+
+way3 <- combine2[prot1,]
+row.names(way3) <- paste0(row.names(way3),"_",gene)
+#way4 <- way3[-c(1,10,15,16,28,33,35,42,45,48,51,54,58,69,78,96),]
+#write.csv(way4,"heatmap_82.csv")
+a <- pheatmap(way3, color = c(brewer.pal(11,"RdYlBu")[9:7],"azure1",brewer.pal(11,"RdYlBu")[4:1]), fontsize_col = 8,
+         # annotation_col = ann_col,
+         # annotation_colors = ann_colors,
+         scale = "row",
+         cluster_rows = T, cluster_cols = F,show_rownames = T, show_colnames = T, na_col = "grey60",cutree_rows=3,
+         filename = "heatmap_209_20200509.pdf",main = "Heatmap",width=8,height=20)
+b <- rownames(way3[a$tree_row[["order"]],])
+write.csv(b,"orderlist_heatmap_209_20200509.csv")
+
+```
+
+
+heatmap_20200509 prot97
+```{r}
+combine <- ge.readtable("protein_matrix_nine_combine_divide_ctrl20200509.txt")
+combine2 <- combine
+combine2[is.na(combine2)] <- 0
+
+prot <- read_xlsx("97prot.xlsx",sheet=2)
+prot1 <- as.character(prot$yourlist) 
+gene <- prot$Genename[match(prot1,prot$yourlist)]
+
+way3 <- combine2[prot1,]
+row.names(way3) <- paste0(row.names(way3),"_",gene)
+#way4 <- way3[-c(1,10,15,16,28,33,35,42,45,48,51,54,58,69,78,96),]
+#write.csv(way4,"heatmap_82.csv")
+a <- pheatmap(way3, color = c(brewer.pal(11,"RdYlBu")[9:7],"azure1",brewer.pal(11,"RdYlBu")[4:1]), fontsize_col = 8,
+         # annotation_col = ann_col,
+         # annotation_colors = ann_colors,
+         scale = "row",
+         cluster_rows = T, cluster_cols = F,show_rownames = T, show_colnames = T, na_col = "grey60",cutree_rows=3,
+         filename = "heatmap_97_20200510.pdf",main = "Heatmap",width=8,height=20)
+b <- rownames(way3[a$tree_row[["order"]],])
+write.csv(b,"orderlist_heatmap_97_20200510.csv")
+
+
+
+way5 <- round(t(apply(way3, 1, scale)),2)
+colnames(way5) <- names(way3)
+
+###################################################################
+  plot.boxplot <- function(data,x,y,type,group,filename,title="boxplot"){
+  a <- ggplot(data=data, aes(x =x, y =y ,fill=type,group=group)) +
+    geom_boxplot(size=1,width=0.7)+
+    geom_jitter(size=0.8,width=0.1,color="black") +
+    ggtitle(title)+
+    labs(x="Time(weeks)",y="Protein expression ratio.",fill= "type")+
+    theme_bw() + 
+    theme(legend.position='top')+
+    theme(panel.border = element_blank())+
+    theme(axis.line = element_line(size=1, colour = "black")) +
+    theme(panel.grid =element_blank())+  
+    scale_fill_manual(values=c("#FDB462","#BC80BD"))+
+    theme(axis.text = element_text(size = 17,colour = "black"),text = element_text(size = 15,colour = "black"))+
+    theme(axis.text.x = element_text(  hjust = 1,angle = 45))+
+      theme(axis.title.x=element_text(size=17, hjust=0.5, color="black"))+
+    theme(axis.title.y=element_text(size=17, hjust=0.5, color="black"))
+  ggsave(paste0(filename, ".pdf"),plot=a,width=10,height=8)
+  }
+  
+up <- read_xlsx("../4_veen_plot/orderlist_heatmap_97_20200512-1412.xlsx",sheet = 2,col_names = F)
+
+upnm <- which(row.names(way5) %in% up$...1)
+data2 <- c()
+for (i in upnm) {
+  nm <- row.names(way5)[i]
+  data <- way5[i,]
+  data1 <- data.frame(value=data,time=rep(1:9,2),type=rep(c("1SC","2LC"),each=9))
+  data2 <- rbind(data2,data1)
+}
+data2$group <- paste0(data2$time,"_",data2$type)
+  plot.boxplot(data2,data2$group,data2$value,factor(data2$type,levels=c("1SC","2LC")),data2$group,filename="boxplot/combine1.2" ,title=paste0("boxplot_combine1") )
+  
+  
+dw <- read_xlsx("../4_veen_plot/orderlist_heatmap_97_20200512-1412.xlsx",sheet = 3,col_names = F)
+
+dwnm <- which(row.names(way5) %in% dw$...1)
+  data2 <- c()
+for (i in dwnm) {
+  nm <- row.names(way5)[i]
+  data <- way5[i,]
+  data1 <- data.frame(value=data,time=rep(1:9,2),type=rep(c("1SC","2LC"),each=9))
+  data2 <- rbind(data2,data1)
+}
+data2$group <- paste0(data2$time,"_",data2$type)
+  plot.boxplot(data2,data2$group,data2$value,data2$type,data2$group,filename="boxplot/combine2.2" ,title=paste0("boxplot_combine2") )
+  
+```
+
